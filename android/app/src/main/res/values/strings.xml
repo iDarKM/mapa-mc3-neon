@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MC3_Map_Neon</string>
+    <string name="title_activity_main">MC3_Map_Neon</string>
+    <string name="package_name">com.mc3.map</string>
+    <string name="custom_url_scheme">com.mc3.map</string>
+</resources>

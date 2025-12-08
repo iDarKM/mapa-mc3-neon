@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Midnight Club 3 Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        #map { 
+            height: 100vh;
+            width: 100vw;
+        }
+        body { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background-color: #000000;
+        }
+        #pac-input {
+            position: absolute; 
+            top: 10px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            z-index: 5; 
+            background-color: #fff;
+            box-sizing: border-box; 
+            border: 1px solid transparent; 
+            border-radius: 2px; 
+            padding: 10px; 
+            width: 80%; 
+            max-width: 400px; 
+            font-size: 16px; 
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            outline: none;
+        }
+        #info-panel {
+            position: absolute; 
+            top: 0; 
+            right: 0; 
+            height: 100vh; 
+            width: 300px; 
+            background-color: rgba(34, 34, 34, 0.95); 
+            color: #fff; 
+            z-index: 10; 
+            padding: 15px; 
+            overflow-y: auto; 
+            display: none; 
+            box-shadow: -5px 0 15px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s ease-in-out;
+        }
+        #info-panel h3 {
+            color: #00ffff; 
+            margin-top: 0;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #333;
+        }
+        .info-button {
+            display: block; 
+            margin-top: 10px; 
+            padding: 10px; 
+            background-color: #00ffff; 
+            color: #000; 
+            text-align: center; 
+            text-decoration: none; 
+            border: none; 
+            cursor: pointer;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        
+        /* ESTILOS PARA BOTONES DE ACCIÓN FLOTANTE (NUEVO) */
+        #action-buttons {
+            position: absolute;
+            bottom: 20px; 
+            left: 20px; 
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+        }
+        .action-btn {
+            background-color: rgba(34, 34, 34, 0.95);
+            border: 2px solid #00ffff;
+            color: #00ffff;
+            font-size: 20px;
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            margin-top: 10px;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            line-height: 40px;
+            text-align: center;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <input id="pac-input" type="text" placeholder="Buscar lugares...">
+    
+    <div id="info-panel">
+        <button onclick="document.getElementById('info-panel').style.display='none'" 
+                style="float: right; background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button>
+        <div id="place-details-content">
+            </div>
+    </div>
+
+    <div id="action-buttons">
+        <button id="recenter-btn" onclick="centerMapOnUser()" class="action-btn" title="Centrar en mi ubicación">📍</button>
+        <button id="cancel-route-btn" onclick="cancelRoute()" class="action-btn" style="display: none;" title="Cancelar ruta">❌</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        let map;
+        let userMarker;
+        let placesService; 
+        let directionsService; 
+        let directionsRenderer; 
+        const ARROW_ICON = 'mc3_arrow.png'; 
+
+        function initMap() {
+            if (!navigator.geolocation) {
+                alert("Tu dispositivo no soporta la localización (Geolocation).");
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const userLocation = { 
+                        lat: position.coords.latitude, 
+                        lng: position.coords.longitude 
+                    };
+                    
+                    // 1. Crea el Mapa 
+                    map = new google.maps.Map(document.getElementById('map'), {
+                        center: userLocation,
+                        zoom: 16,
+                        disableDefaultUI: false, 
+                        keyboardShortcuts: false,
+                        gestureHandling: 'greedy', 
+                        mapId: '28c6f40d441a4eb9e66abcfc',
+                    });
+
+                    // Servicios de Direcciones
+                    directionsService = new google.maps.DirectionsService();
+                    directionsRenderer = new google.maps.DirectionsRenderer({
+                        map: map,
+                        suppressMarkers: true, 
+                        polylineOptions: {
+                            strokeColor: '#00ffff', 
+                            strokeWeight: 5
+                        }
+                    });
+
+                    // Inicializa los servicios
+                    placesService = new google.maps.places.PlacesService(map);
+                    const infoPanel = document.getElementById('info-panel');
+                    const contentDiv = document.getElementById('place-details-content');
+
+                    // Listener para Clics en POIs
+                    map.addListener("click", (event) => {
+                        if (event.placeId) {
+                            event.stop(); 
+                            
+                            infoPanel.style.display = 'none';
+                            contentDiv.innerHTML = 'Cargando...';
+
+                            // Limpia si había una ruta trazada
+                            directionsRenderer.setDirections({ routes: [] });
+                            if (userMarker) userMarker.setMap(map);
+                            document.getElementById('cancel-route-btn').style.display = 'none';
+
+                            placesService.getDetails(
+                                { placeId: event.placeId }, 
+                                (place, status) => {
+                                    if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+                                        
+                                        let htmlContent = `<h3>${place.name}</h3>`;
+                                        
+                                        // Foto
+                                        if (place.photos && place.photos.length > 0) {
+                                            const photoUrl = place.photos[0].getUrl({ maxWidth: 260, maxHeight: 150 });
+                                            htmlContent += `<img src="${photoUrl}" style="width: 100%; border-radius: 5px; margin-bottom: 10px;">`;
+                                        }
+
+                                        // Rating y Dirección
+                                        if (place.rating) {
+                                            htmlContent += `<p>★ ${place.rating} (${place.user_ratings_total})</p>`;
+                                        }
+                                        htmlContent += `<p>${place.vicinity || place.formatted_address}</p>`;
+                                        
+                                        // Botón de Cómo llegar aquí
+                                        const lat = place.geometry.location.lat();
+                                        const lng = place.geometry.location.lng();
+                                        const destinationCoords = `${lat},${lng}`;
+                                        
+                                        htmlContent += `<button onclick="calculateAndDisplayRoute('${destinationCoords}')" class="info-button">Cómo llegar aquí</button>`;
+                                        
+                                        // Llenar el panel y hacerlo visible
+                                        contentDiv.innerHTML = htmlContent;
+                                        infoPanel.style.display = 'block';
+
+                                    } else {
+                                        console.error("Error al obtener detalles del lugar:", status);
+                                        infoPanel.style.display = 'none'; 
+                                    }
+                                }
+                            );
+                        } else {
+                            // Si el clic no fue en un POI, oculta el panel
+                            infoPanel.style.display = 'none';
+                        }
+                    });
+
+                    // Lógica del Buscador
+                    const input = document.getElementById('pac-input');
+                    const searchBox = new google.maps.places.SearchBox(input);
+
+                    map.addListener("bounds_changed", () => {
+                        searchBox.setBounds(map.getBounds());
+                    });
+
+                    searchBox.addListener("places_changed", () => {
+                        const places = searchBox.getPlaces();
+                        if (places.length == 0) return;
+
+                        const place = places[0];
+                        if (place.geometry && place.geometry.location) {
+                            map.panTo(place.geometry.location);
+                            map.setZoom(16);
+                        }
+                    });
+
+                    // Crea el Puntero MC3 (Custom Marker)
+                    userMarker = new google.maps.Marker({
+                        position: userLocation,
+                        map: map,
+                        icon: {
+                            url: ARROW_ICON,
+                            scaledSize: new google.maps.Size(40, 40), 
+                            anchor: new google.maps.Point(20, 20),
+                        },
+                        title: "Mi Ubicación",
+                    });
+
+                    watchPosition();
+                },
+                (error) => {
+                    console.error("Error al obtener ubicación:", error);
+                    alert("Error: No se pudo obtener tu ubicación. Recarga la página.");
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+            );
+        }
+
+        function watchPosition() {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const newLocation = new google.maps.LatLng(
+                        position.coords.latitude,
+                        position.coords.longitude
+                    );
+                    
+                    userMarker.setPosition(newLocation);
+                },
+                (error) => console.error("Error en la vigilancia de posición:", error),
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+            );
+        }
+
+        // FUNCIONES DE CONTROL DE MAPA
+        
+        function centerMapOnUser() {
+            if (userMarker && userMarker.getPosition()) {
+                map.setCenter(userMarker.getPosition());
+                map.setZoom(16);
+            }
+        }
+
+        function cancelRoute() {
+            // Ocultar la línea de ruta
+            directionsRenderer.setDirections({ routes: [] });
+
+            // Volver a mostrar el marcador del usuario
+            if (userMarker) userMarker.setMap(map);
+            
+            // Ocultar el botón de cancelar
+            document.getElementById('cancel-route-btn').style.display = 'none';
+            
+            // Centrar el mapa en la ubicación del usuario
+            centerMapOnUser();
+        }
+
+        function calculateAndDisplayRoute(destinationCoords) {
+            directionsRenderer.setDirections({ routes: [] });
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const originCoords = new google.maps.LatLng(
+                            position.coords.latitude,
+                            position.coords.longitude
+                        );
+
+                        directionsService.route(
+                            {
+                                origin: originCoords,
+                                destination: destinationCoords,
+                                travelMode: google.maps.TravelMode.DRIVING, 
+                            },
+                            (response, status) => {
+                                if (status === 'OK') {
+                                    directionsRenderer.setDirections(response);
+                                    userMarker.setMap(null); 
+                                    document.getElementById('info-panel').style.display = 'none';
+                                    
+                                    // MOSTRAR EL BOTÓN DE CANCELAR
+                                    document.getElementById('cancel-route-btn').style.display = 'block';
+                                } else {
+                                    alert('No se pudo calcular la ruta: ' + status);
+                                    console.error('Directions request failed due to ' + status);
+                                }
+                            }
+                        );
+                    },
+                    (error) => {
+                        alert("No se pudo obtener tu ubicación para trazar la ruta.");
+                    }
+                );
+            } else {
+                alert("Geolocalización no soportada para trazar rutas.");
+            }
+        }
+    </script>
+    
+    <script async
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAu2_tP-eF4yBhkzPfoL-5ZWu6TUHttt1s&libraries=places&callback=initMap">
+    </script>
+</body>
+</html>
