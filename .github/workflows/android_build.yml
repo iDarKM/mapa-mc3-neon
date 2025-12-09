@@ -27,11 +27,14 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      - name: Ensure Node Modules Binaries are in PATH
+        run: echo "::add-path::$(npm bin)"
+
       - name: Ensure Android Platform Exists
-        run: npx cap add android || true
+        run: cap add android || true
 
       - name: Sync Capacitor and Update Web Assets
-        run: npx cap sync android
+        run: cap sync android
 
       # === DECODIFICACIÓN Y CONFIGURACIÓN DE FIRMA ===
       - name: Create Keystore File (from Base64 Secret)
